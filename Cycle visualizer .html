@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plus court cycle — Visualiseur de graphe</title>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --text: #1b2333;
+    --text-dim: #5b6478;
+    --border: #e1e5ef;
+    --accent: #4f5dff;
+    --accent-2: #15c3b2;
+    --danger: #ff4f6d;
+    --cycle: #ff8a3d;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131d;
+      --panel: #1a1f2e;
+      --text: #eef1f8;
+      --text-dim: #9aa3b8;
+      --border: #2a3042;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10131d;
+    --panel: #1a1f2e;
+    --text: #eef1f8;
+    --text-dim: #9aa3b8;
+    --border: #2a3042;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 22px 28px 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  header p { margin: 4px 0 0; opacity: .9; font-size: 14px; }
+
+  main {
+    display: flex;
+    gap: 18px;
+    padding: 18px;
+    max-width: 1300px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.06);
+    padding: 16px;
+  }
+  .graph-panel { flex: 2 1 560px; min-width: 320px; }
+  .results-panel { flex: 1 1 320px; min-width: 300px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  button {
+    font: inherit;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform .1s, background .15s;
+  }
+  button:hover { transform: translateY(-1px); }
+  button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+  }
+  button.danger { color: var(--danger); }
+
+  #canvasWrap {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    touch-action: none;
+  }
+  svg { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  .edge { stroke: var(--text-dim); stroke-width: 2.5; }
+  .edge.cycle { stroke: var(--cycle); stroke-width: 4; }
+  .node-circle { fill: var(--panel); stroke: var(--accent); stroke-width: 2.5; cursor: grab; }
+  .node-circle.selected { stroke: var(--accent-2); stroke-width: 4; }
+  .node-circle.cycle { stroke: var(--cycle); fill: color-mix(in srgb, var(--cycle) 18%, var(--panel)); }
+  .node-label { fill: var(--text); font-weight: 700; font-size: 14px; pointer-events: none; user-select: none; }
+
+  .hint { font-size: 13px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .stat-row span:last-child { font-weight: 700; }
+  .formula {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin: 10px 0;
+    text-align: center;
+  }
+  .bfs-log { max-height: 160px; overflow-y: auto; font-size: 13px; }
+  .bfs-log div { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; }
+  .bfs-log .win { color: var(--cycle); font-weight: 700; }
+  .cycle-result {
+    background: color-mix(in srgb, var(--cycle) 12%, var(--panel));
+    border: 1px solid var(--cycle);
+    border-radius: 10px;
+    padding: 12px;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  .empty-msg { color: var(--text-dim); font-size: 14px; text-align: center; padding: 20px 0; }
+  h3 { margin: 16px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔎 Plus court cycle dans un graphe</h1>
+  <p>Construisez un graphe, puis lancez BFS depuis chaque sommet pour trouver le cycle le plus court.</p>
+</header>
+
+<main>
+  <section class="panel graph-panel">
+    <div class="toolbar">
+      <button id="modeVertex" class="active">➕ Sommet</button>
+      <button id="modeEdge">🔗 Arête</button>
+      <button id="modeDelete">🗑️ Supprimer</button>
+      <button id="demoBtn">✨ Exemple</button>
+      <button id="resetBtn" class="danger">Réinitialiser</button>
+    </div>
+    <div id="canvasWrap">
+      <svg id="canvas"></svg>
+    </div>
+    <div class="hint" id="hint">Cliquez sur une zone vide pour ajouter un sommet. Glissez un sommet pour le déplacer.</div>
+  </section>
+
+  <section class="panel results-panel">
+    <button class="primary" id="analyzeBtn">▶ Analyser le graphe</button>
+    <div id="results">
+      <p class="empty-msg">Construisez un graphe puis cliquez sur « Analyser ».</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+  const svg = document.getElementById('canvas');
+  const hint = document.getElementById('hint');
+  const resultsEl = document.getElementById('results');
+
+  let nodes = [];   // {id, label, x, y}
+  let edges = [];   // [id1, id2]
+  let mode = 'vertex';
+  let selectedForEdge = null;
+  let cycleHighlight = { nodes: new Set(), edges: new Set() };
+  let nextIndex = 0;
+
+  function label(i) {
+    let s = '';
+    i++;
+    while (i > 0) { i--; s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i / 26); }
+    return s;
+  }
+
+  function setMode(m) {
+    mode = m;
+    selectedForEdge = null;
+    ['modeVertex','modeEdge','modeDelete'].forEach(id => document.getElementById(id).classList.remove('active'));
+    document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1)).classList.add('active');
+    const hints = {
+      vertex: 'Cliquez sur une zone vide pour ajouter un sommet. Glissez un sommet pour le déplacer.',
+      edge: 'Cliquez un sommet puis un second pour créer une arête.',
+      delete: 'Cliquez un sommet ou une arête pour la supprimer.'
+    };
+    hint.textContent = hints[m];
+    render();
+  }
+  document.getElementById('modeVertex').onclick = () => setMode('vertex');
+  document.getElementById('modeEdge').onclick = () => setMode('edge');
+  document.getElementById('modeDelete').onclick = () => setMode('delete');
+
+  document.getElementById('resetBtn').onclick = () => {
+    nodes = []; edges = []; nextIndex = 0; selectedForEdge = null;
+    cycleHighlight = { nodes: new Set(), edges: new Set() };
+    resultsEl.innerHTML = '<p class="empty-msg">Construisez un graphe puis cliquez sur « Analyser ».</p>';
+    render();
+  };
+
+  document.getElementById('demoBtn').onclick = () => {
+    nodes = []; edges = []; nextIndex = 0;
+    cycleHighlight = { nodes: new Set(), edges: new Set() };
+    const w = svg.clientWidth || 600, h = svg.clientHeight || 450;
+    const pts = [
+      ['A', w*0.5, h*0.15], ['B', w*0.25, h*0.4], ['C', w*0.5, h*0.65],
+      ['D', w*0.75, h*0.4], ['E', w*0.85, h*0.75], ['F', w*0.65, h*0.9], ['G', w*0.45, h*0.9]
+    ];
+    pts.forEach(([lab,x,y]) => nodes.push({id: lab, label: lab, x, y}));
+    nextIndex = pts.length;
+    [['A','B'],['B','C'],['C','A'],['C','D'],['D','E'],['E','F'],['F','G'],['G','C']]
+      .forEach(([a,b]) => edges.push([a,b]));
+    resultsEl.innerHTML = '<p class="empty-msg">Exemple chargé — cliquez sur « Analyser ».</p>';
+    render();
+  };
+
+  function edgeExists(a,b) {
+    return edges.some(([x,y]) => (x===a&&y===b)||(x===b&&y===a));
+  }
+
+  function addVertexAt(x,y) {
+    const id = label(nextIndex++);
+    nodes.push({ id, label: id, x, y });
+    render();
+  }
+
+  function deleteNode(id) {
+    nodes = nodes.filter(n => n.id !== id);
+    edges = edges.filter(([a,b]) => a!==id && b!==id);
+    render();
+  }
+  function deleteEdge(a,b) {
+    edges = edges.filter(([x,y]) => !((x===a&&y===b)||(x===b&&y===a)));
+    render();
+  }
+
+  function onNodeClick(id) {
+    if (mode === 'edge') {
+      if (selectedForEdge === null) {
+        selectedForEdge = id;
+      } else if (selectedForEdge === id) {
+        selectedForEdge = null;
+      } else {
+        if (!edgeExists(selectedForEdge, id)) edges.push([selectedForEdge, id]);
+        selectedForEdge = null;
+      }
+      render();
+    } else if (mode === 'delete') {
+      deleteNode(id);
+    }
+  }
+
+  // --- dragging ---
+  let dragId = null, dragMoved = false, dragStart = null;
+
+  function onPointerDown(e, id) {
+    e.stopPropagation();
+    dragId = id; dragMoved = false;
+    dragStart = { x: e.clientX, y: e.clientY };
+  }
+  svg.addEventListener('pointermove', (e) => {
+    if (dragId === null) return;
+    const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      dragMoved = true;
+      const rect = svg.getBoundingClientRect();
+      const n = nodes.find(n => n.id === dragId);
+      if (n) { n.x = e.clientX - rect.left; n.y = e.clientY - rect.top; render(); }
+    }
+  });
+  window.addEventListener('pointerup', () => {
+    if (dragId !== null && !dragMoved) onNodeClick(dragId);
+    dragId = null; dragStart = null;
+  });
+
+  svg.addEventListener('click', (e) => {
+    if (e.target !== svg) return; // clicked a node/edge, handled elsewhere
+    if (mode !== 'vertex') return;
+    const rect = svg.getBoundingClientRect();
+    addVertexAt(e.clientX - rect.left, e.clientY - rect.top);
+  });
+
+  function render() {
+    svg.innerHTML = '';
+    const NS = 'http://www.w3.org/2000/svg';
+
+    edges.forEach(([a,b]) => {
+      const na = nodes.find(n => n.id === a), nb = nodes.find(n => n.id === b);
+      if (!na || !nb) return;
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', na.x); line.setAttribute('y1', na.y);
+      line.setAttribute('x2', nb.x); line.setAttribute('y2', nb.y);
+      const key = [a,b].sort().join('|');
+      line.setAttribute('class', 'edge' + (cycleHighlight.edges.has(key) ? ' cycle' : ''));
+      line.style.cursor = 'pointer';
+      line.addEventListener('click', (e) => { e.stopPropagation(); if (mode === 'delete') deleteEdge(a,b); });
+      svg.appendChild(line);
+    });
+
+    nodes.forEach(n => {
+      const g = document.createElementNS(NS, 'g');
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', n.x); circle.setAttribute('cy', n.y); circle.setAttribute('r', 20);
+      let cls = 'node-circle';
+      if (n.id === selectedForEdge) cls += ' selected';
+      if (cycleHighlight.nodes.has(n.id)) cls += ' cycle';
+      circle.setAttribute('class', cls);
+      circle.addEventListener('pointerdown', (e) => onPointerDown(e, n.id));
+      const text = document.createElementNS(NS, 'text');
+      text.setAttribute('x', n.x); text.setAttribute('y', n.y + 5);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('class', 'node-label');
+      text.textContent = n.label;
+      g.appendChild(circle); g.appendChild(text);
+      svg.appendChild(g);
+    });
+  }
+
+  // ---------------- Algorithme (BFS + cycle le plus court) ----------------
+  function buildAdjacency() {
+    const adj = {};
+    nodes.forEach(n => adj[n.id] = []);
+    edges.forEach(([a,b]) => { adj[a].push(b); adj[b].push(a); });
+    return adj;
+  }
+
+  function bfs(adj, start) {
+    const visited = new Set([start]);
+    const parent = { [start]: start };
+    const distance = { [start]: 0 };
+    const cycleEdges = new Set();
+    const queue = [start];
+    let qi = 0;
+    while (qi < queue.length) {
+      const u = queue[qi++];
+      for (const v of adj[u]) {
+        if (!visited.has(v)) {
+          visited.add(v);
+          parent[v] = u;
+          distance[v] = distance[u] + 1;
+          queue.push(v);
+        } else if (parent[u] !== v && parent[v] !== u) {
+          cycleEdges.add([u,v].sort().join('|'));
+        }
+      }
+    }
+    return { parent, distance, cycleEdges: [...cycleEdges] };
+  }
+
+  function getTreePath(parent, u) {
+    const path = [];
+    let current = u;
+    while (true) {
+      path.push(current);
+      if (parent[current] === current) break;
+      current = parent[current];
+    }
+    return path.reverse();
+  }
+
+  function reconstructCycle(parent, u, v) {
+    const pu = getTreePath(parent, u), pv = getTreePath(parent, v);
+    let i = 0;
+    while (i < Math.min(pu.length, pv.length) && pu[i] === pv[i]) i++;
+    i--;
+    return pu.slice(i).concat(pv.slice(i+1).reverse());
+  }
+
+  function findShortestCycle(adj) {
+    let best = null;
+    const log = [];
+    for (const root of Object.keys(adj)) {
+      const { parent, cycleEdges } = bfs(adj, root);
+      let bestForRoot = null;
+      for (const key of cycleEdges) {
+        const [u,v] = key.split('|');
+        const cyc = reconstructCycle(parent, u, v);
+        if (!bestForRoot || cyc.length < bestForRoot.length) bestForRoot = cyc;
+      }
+      log.push({ root, len: bestForRoot ? bestForRoot.length : null });
+      if (bestForRoot && (!best || bestForRoot.length < best.length)) best = bestForRoot;
+    }
+    return { best, log };
+  }
+
+  document.getElementById('analyzeBtn').onclick = () => {
+    if (nodes.length === 0) {
+      resultsEl.innerHTML = '<p class="empty-msg">Ajoutez au moins un sommet.</p>';
+      return;
+    }
+    const adj = buildAdjacency();
+    const V = nodes.length, E = edges.length;
+    const { best, log } = findShortestCycle(adj);
+
+    cycleHighlight = { nodes: new Set(), edges: new Set() };
+    if (best) {
+      best.forEach(id => cycleHighlight.nodes.add(id));
+      for (let i = 0; i < best.length; i++) {
+        const a = best[i], b = best[(i+1) % best.length];
+        cycleHighlight.edges.add([a,b].sort().join('|'));
+      }
+    }
+    render();
+
+    const logHtml = log.map(l =>
+      `<div><span>BFS depuis ${l.root}</span><span class="${best && l.len === best.length ? 'win' : ''}">${l.len ?? '—'}</span></div>`
+    ).join('');
+
+    const approxOps = V * (V + E);
+
+    let cycleHtml;
+    if (best) {
+      cycleHtml = `<div class="cycle-result">
+        🟠 Cycle le plus court : <strong>${best.join(' → ')} → ${best[0]}</strong><br>
+        Longueur : <strong>${best.length}</strong>
+      </div>`;
+    } else {
+      cycleHtml = `<div class="cycle-result" style="border-color:var(--border); background:var(--bg);">
+        Aucun cycle détecté — le graphe est une forêt.
+      </div>`;
+    }
+
+    resultsEl.innerHTML = `
+      <div class="stat-row"><span>Sommets (V)</span><span>${V}</span></div>
+      <div class="stat-row"><span>Arêtes (E)</span><span>${E}</span></div>
+      <h3>Complexité</h3>
+      <div class="formula">O(V · (V + E)) ≈ ${V} × (${V} + ${E}) = <strong>${approxOps}</strong> opérations</div>
+      <h3>BFS depuis chaque sommet</h3>
+      <div class="bfs-log">${logHtml}</div>
+      <h3>Résultat</h3>
+      ${cycleHtml}
+    `;
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
