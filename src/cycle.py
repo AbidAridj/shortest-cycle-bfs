@@ -2,6 +2,16 @@ def get_tree_path(parent, start_root_hint, u):
     """
     Remonte de u jusqu'à la racine en suivant parent[].
     Renvoie le chemin dans l'ordre [racine, ..., u].
+        Complexité :
+        - Un BFS coûte O(V + E).
+        - On exécute un BFS depuis chacun des V sommets.
+        - La reconstruction d'un cycle (get_tree_path + LCA) coûte O(V)
+          dans le pire cas, et il y a au plus O(E) arêtes non-arbre
+          à traiter par BFS, donc O(V) négligeable devant le BFS si
+          le graphe n'est pas trop dense.
+
+        => Complexité totale : O(V * (V + E))
+
     """
     path = []
     current = u

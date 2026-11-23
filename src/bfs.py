@@ -1,4 +1,3 @@
-
 from collections import deque
 
 
@@ -15,39 +14,36 @@ def bfs(graph, start):
             - parent: BFS parent of each visited vertex.
             - distance: Distance from the starting vertex.
             - cycle_edges: Non-tree edges detected during BFS.
+
+    Complexité : O(V + E) — chaque sommet et chaque arête du graphe
+    (ou de sa composante connexe) est visité au plus une fois.
     """
 
-    # Initialize BFS data structures
     visited = set()
     parent = {}
     distance = {}
     cycle_edges = set()
 
-    # Initialize the queue
     queue = deque([start])
 
-    # Mark the starting vertex as visited
     visited.add(start)
-    parent[start] = None
+    parent[start] = start   # <-- correction : la racine est son propre parent
+                             #     (convention attendue par cycle.py::get_tree_path,
+                             #      qui s'arrête quand parent[current] == current)
     distance[start] = 0
 
-    # BFS traversal
     while queue:
         u = queue.popleft()
 
         for v in graph[u]:
 
-            # Case 1: Vertex v has not been visited
             if v not in visited:
                 visited.add(v)
                 parent[v] = u
                 distance[v] = distance[u] + 1
                 queue.append(v)
 
-            # Case 2: Vertex v has already been visited
             elif parent[u] != v and parent[v] != u:
-
-                # Store the undirected edge without duplication
                 edge = frozenset((u, v))
                 cycle_edges.add(edge)
 
